@@ -14,6 +14,9 @@ void freerange(void *pa_start, void *pa_end);
 extern char end[]; // first address after kernel.
                    // defined by kernel.ld.
 
+// added
+// static int page_used = 0;
+// static int addr_space = 0;
 struct run {
   struct run *next;
 };
@@ -28,6 +31,9 @@ kinit()
 {
   initlock(&kmem.lock, "kmem");
   freerange(end, (void*)PHYSTOP);
+
+  // added
+  // addr_space = (int)((void*)PHYSTOP - (void*)end);
 }
 
 void
@@ -60,6 +66,8 @@ kfree(void *pa)
   r->next = kmem.freelist;
   kmem.freelist = r;
   release(&kmem.lock);
+
+  // page_used--;
 }
 
 // Allocate one 4096-byte page of physical memory.
@@ -78,5 +86,26 @@ kalloc(void)
 
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
+
+  // page_used++;
+
   return (void*)r;
 }
+
+int bytes_unused(){
+  // return (addr_space - PGSIZE * page_used);
+  struct run* r;
+  int num = 0;
+  acquire(&kmem.lock);
+  
+  r = kmem.freelist;
+
+  while(r){
+    r = r->next;
+    num++;
+  }
+
+  release(&kmem.lock);
+  return num * PGSIZE;
+}
+

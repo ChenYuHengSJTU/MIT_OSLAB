@@ -6,6 +6,8 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "syscall.h"
+#include "sysinfo.h"
 
 uint64
 sys_exit(void)
@@ -94,4 +96,51 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+
+#define MASK 0x00000001
+char* syscall_name[32]={
+  "syscall fork","syscall exit","syscall wait","syscall pipe","syscall read","syscall kill",
+  "syscall exec","syscall fstat","syscall chdir","syscall dup","syscall getpid","syscall sbrk",
+  "syscall sleep","syscall uptime","syscall open","syscall write","syscall mknod",
+  "syscall unlink","syscall link","syscall mkdir","syscall close","syscall trace","syscall sysinfo"
+};
+
+int traced_syscall[32]={0};
+// added
+uint64
+sys_trace(void){
+  int mask;
+  argint(0, &mask);
+  // printf("mask: %d\n",mask);
+  for(int i = 1;i <= 22;++i){
+    if((mask >> i) & MASK){
+      traced_syscall[i] = 1;
+      // printf("traced %d\n",i);
+    }
+  }
+  return 0;
+}
+
+extern int bytes_unused();
+extern int count_proc();
+
+uint64
+sys_sysinfo(void){
+  printf("called\n");
+
+  struct sysinfo info;
+  // argaddr(0,(uint64*)(&info));
+  info.nproc = count_proc();
+  info.freemem = bytes_unused();
+  struct proc *p=myproc();
+
+  uint64 addr;
+  if(argaddr(0,&addr) < 0) return -1;
+
+  if(copyout(p->pagetable,addr,(char*)&info,sizeof(info)) < 0) return -1;
+
+  printf("freemem: %d\tnproc: %d\n",info.freemem,info.nproc);
+
+  return 0;
 }
