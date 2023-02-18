@@ -36,6 +36,9 @@ grep(char *pattern, int fd)
 int
 main(int argc, char *argv[])
 {
+  // printf("grep:\targc: %d\targv: ",argc);
+  // for(int i=0;i<argc;++i) printf(argv[i]);
+
   int fd, i;
   char *pattern;
 
