@@ -307,3 +307,7 @@ myapi.key:
 
 
 .PHONY: handin tarball tarball-pref clean grade handin-check
+
+# important to use the riscv64-gdb
+gdb:
+	riscv64-unknown-elf-gdb kernel/kernel

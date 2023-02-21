@@ -103,6 +103,7 @@ int main(int argc,char* argv[]){
             // Important!!!
             char* argvs[32];
             for(int i=0;i<Argc;++i) argvs[i]=Argv[i];
+            // must use NULL to mark the end of the argv
             argvs[Argc]=NULL;
 
             if(fork()==0){

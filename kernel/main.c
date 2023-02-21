@@ -4,6 +4,8 @@
 #include "riscv.h"
 #include "defs.h"
 
+// the init order in main is kind of important
+
 volatile static int started = 0;
 
 // start() jumps here in supervisor mode on all CPUs.

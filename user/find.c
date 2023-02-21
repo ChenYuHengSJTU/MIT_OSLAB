@@ -53,6 +53,7 @@ void find(char* path,char* target){
             break;
     }
     // close() is so important
+    // do not forget to close , otherwise some errors may occur
     close(fd);
     return;
 }

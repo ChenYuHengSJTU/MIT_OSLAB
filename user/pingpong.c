@@ -10,6 +10,7 @@ int main(int argc,char* argv[]){
     int p[2];
     pipe(p);
     byte[1]='\0';
+    // do not forget to close both the pipes in parent and child process
     if(fork()==0){
         // read(ptoc_p[0],byte,1);
         // printf("%d: received ping\n",getpid());
@@ -17,6 +18,9 @@ int main(int argc,char* argv[]){
         read(p[0],byte,1);
         printf("%d: received ping\n",getpid());
         write(p[1],byte,1);
+        // 
+        close(p[0]);
+        close(p[1]);
         exit(0);
     }
     else{
@@ -24,8 +28,10 @@ int main(int argc,char* argv[]){
         // wait((int*)(0));
         // read(ctop_p[0],byte,1);
         write(p[1],"c",1);
+        close(p[1]);
         wait((int*)(0));
         read(p[0],byte,1);
+        close(p[0]);
         printf("%d: received pong\n",getpid());
         exit(0);
     }
