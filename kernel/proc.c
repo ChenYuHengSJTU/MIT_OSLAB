@@ -49,7 +49,7 @@ procinit(void)
       p->kstack = va;
       #endif
   }
-  // kvminithart();
+  kvminithart();
 }
 
 // Must be called with interrupts disabled,
@@ -121,6 +121,27 @@ found:
     return 0;
   }
 
+#ifdef KERNEL_PER_PROC
+// added : map the stack to the kernel page
+  // initlock(&p->lock, "proc");
+  char *pa = kalloc();
+  p->kernel_pagetable = kvminit_aux();
+
+  if(p->kernel_pagetable == 0){
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+
+  if(pa == 0)
+    panic("kalloc");
+    // should use different kernel stack
+  uint64 va = KSTACK((int) (p - proc));
+  // uint64 va = TRAMPOLINE - (int)(p - proc) * PGSIZE;
+  uvmmap(p->kernel_pagetable, va, (uint64)pa, PGSIZE,  PTE_R | PTE_W);
+  p->kstack = va; 
+#endif
+
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
   if(p->pagetable == 0){
@@ -135,19 +156,6 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
-  #ifdef KERNEL_PER_PROC
-// added : map the stack to the kernel page
-  // initlock(&p->lock, "proc");
-  char *pa = kalloc();
-  p->kernel_pagetable = kvminit_aux();
-  if(pa == 0)
-    panic("kalloc");
-  // uint64 va = KSTACK((int) (p - proc));
-  uint64 va = TRAMPOLINE - 2 * PGSIZE;
-  mappages(p->kernel_pagetable, va, PGSIZE, (uint64)pa, PTE_R | PTE_W);
-  p->kstack = va; 
-  #endif
-
   return p;
 }
 
@@ -157,23 +165,9 @@ extern char etext[];
 void
 free_kernel_pagetable(pagetable_t pagetable , uint64 kstack)
 {
-  // there are 2^9 = 512 PTEs in a page table.
-  // for(int i = 0; i < 512; i++){
-  //   pte_t pte = pagetable[i];
-  //   if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0){
-  //     // this PTE points to a lower-level page table.
-  //     uint64 child = PTE2PA(pte);
-  //     free_kernel_pagetable((pagetable_t)child);
-  //     pagetable[i] = 0;
-  //   } else if(pte & PTE_V){
-  //     panic("freewalk: leaf");
-  //   }
-  // }
-  // kfree((void*)pagetable);
-
   uvmunmap(pagetable, UART0 ,1,0);
   uvmunmap(pagetable, VIRTIO0, 1, 0);
-  uvmunmap(pagetable, CLINT, 0x10000/PGSIZE ,0);
+  // uvmunmap(pagetable, CLINT, 0x10000/PGSIZE ,0);
   uvmunmap(pagetable, PLIC, 0x400000/PGSIZE ,0);
   uvmunmap(pagetable, KERNBASE ,((uint64)etext - KERNBASE)/PGSIZE ,0);
   uvmunmap(pagetable, (uint64)etext ,(PHYSTOP - (uint64)etext)/PGSIZE, 0);
@@ -292,6 +286,10 @@ userinit(void)
 
   p->state = RUNNABLE;
 
+  #ifdef KERNEL_PER_PROC
+    uvm_copyto_kvm(p->pagetable, p->kernel_pagetable, 0, p->sz);
+  #endif
+
   release(&p->lock);
 }
 
@@ -305,9 +303,19 @@ growproc(int n)
 
   sz = p->sz;
   if(n > 0){
+    // added
+    #ifdef KERNEL_PER_PROC
+      if (PGROUNDUP(sz + n) >= PLIC)
+        return -1;
+    #endif
+
     if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
       return -1;
     }
+
+    // added
+    uvm_copyto_kvm(p->pagetable, p->kernel_pagetable,sz - n, sz);
+
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
   }
@@ -332,10 +340,23 @@ fork(void)
   // Copy user memory from parent to child.
   if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
     freeproc(np);
+    return -1;;
     release(&np->lock);
     return -1;
   }
   np->sz = p->sz;
+
+  #ifdef KERNEL_PER_PROC
+  // added
+  // if(uvmcopy(p->kernel_pagetable, np->kernel_pagetable, 1) < 0){
+  //   freeproc(np);
+  //   release(&np->lock);
+  //   return -1; 
+  // }
+
+  uvm_copyto_kvm(np->pagetable, np->kernel_pagetable,0 ,np->sz);
+
+  #endif
 
   np->parent = p;
 
@@ -523,6 +544,8 @@ extern pagetable_t kernel_pagetable;
 void
 scheduler(void)
 {
+  // printf("scheduler begins!\n");
+
   struct proc *p;
   struct cpu *c = mycpu();
   
@@ -550,16 +573,17 @@ scheduler(void)
 
         swtch(&c->context, &p->context);
         kvminithart();
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
+        
+        // we should change back
+        #ifdef KERNEL_PER_PROC
+      // added
+          w_satp(MAKE_SATP(kernel_pagetable));
+          sfence_vma();
+        #endif
+
+      // Process is done running for now.
+      // It should have changed its p->state before coming back.
         c->proc = 0;
-
-      //   #ifdef KERNEL_PER_PROC
-      // // added
-      //     w_satp(MAKE_SATP(kernel_pagetable));
-      //     sfence_vma();
-      //   #endif
-
         found = 1;
       }
       release(&p->lock);
@@ -568,13 +592,12 @@ scheduler(void)
     if(found == 0) {
       intr_on();
 
-
-
-  // #ifdef KERNEL_PER_PROC
-  //     // added
-  //     w_satp(MAKE_SATP(kernel_pagetable));
-  //     sfence_vma();
-  // #endif
+      // we should change back
+        #ifdef KERNEL_PER_PROC
+      // added
+          w_satp(MAKE_SATP(kernel_pagetable));
+          sfence_vma();
+        #endif
 
       asm volatile("wfi");
     }
@@ -584,6 +607,8 @@ scheduler(void)
     ;
 #endif
   }
+  
+  // printf("scheduler work right!\n");
 }
 
 // Switch to scheduler.  Must hold only p->lock

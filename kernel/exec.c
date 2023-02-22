@@ -116,6 +116,7 @@ exec(char *path, char **argv)
   if((pagetable = proc_pagetable(p)) == 0)
     goto bad;
 
+
   // Load program into memory.
   for(i=0, off=elf.phoff; i<elf.phnum; i++, off+=sizeof(ph)){
     if(readi(ip, 0, (uint64)&ph, off, sizeof(ph)) != sizeof(ph))
@@ -153,6 +154,12 @@ exec(char *path, char **argv)
   sp = sz;
   stackbase = sp - PGSIZE;
 
+
+  // // added
+  // #ifdef KERNEL_PER_PROC
+  //   uvm_copyto_kvm(pagetable, p->kernel_pagetable, 0, sz);
+  // #endif
+
   // Push argument strings, prepare rest of stack in ustack.
   for(argc = 0; argv[argc]; argc++) {
     if(argc >= MAXARG)
@@ -185,6 +192,11 @@ exec(char *path, char **argv)
     if(*s == '/')
       last = s+1;
   safestrcpy(p->name, last, sizeof(p->name));
+
+  // added
+  #ifdef KERNEL_PER_PROC
+    uvm_copyto_kvm(pagetable, p->kernel_pagetable, 0, sz);
+  #endif
     
   // Commit to the user image.
   oldpagetable = p->pagetable;

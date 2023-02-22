@@ -162,6 +162,8 @@ void            kvminit(void);
 
 // added
 pagetable_t     kvminit_aux(void);
+void            uvm_copyto_kvm(pagetable_t, pagetable_t, uint64, uint64);           
+void            uvmmap(pagetable_t, uint64, uint64, uint64, int);
 
 void            kvminithart(void);
 uint64          kvmpa(uint64);
@@ -182,6 +184,10 @@ uint64          walkaddr(pagetable_t, uint64);
 int             copyout(pagetable_t, uint64, char *, uint64);
 int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
+
+// added
+int             copyin_new(pagetable_t, char*, uint64, uint64);
+int             copyinstr_new(pagetable_t, char*, uint64, uint64);
 
 // plic.c
 void            plicinit(void);

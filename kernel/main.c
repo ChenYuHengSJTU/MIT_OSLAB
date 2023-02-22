@@ -17,12 +17,16 @@ main()
 #endif
     printfinit();
     printf("\n");
-    printf("xv6 kernel is booting\n");
+    // printf("xv6 kernel is booting\n");
     printf("\n");
     kinit();         // physical page allocator
+    // printf("kinit successfully!\n");
     kvminit();       // create kernel page table
+    // printf("kvminit successfully!\n");
     kvminithart();   // turn on paging
+    // printf("kvminithart successfully!\n");
     procinit();      // process table
+    // printf("procinit successfully!\n");
     trapinit();      // trap vectors
     trapinithart();  // install kernel trap vector
     plicinit();      // set up interrupt controller
@@ -35,7 +39,9 @@ main()
     pci_init();
     sockinit();
 #endif    
+    // printf("userinit begin\n");
     userinit();      // first user process
+    // printf("userinit successfully!\n");
     __sync_synchronize();
     started = 1;
   } else {
