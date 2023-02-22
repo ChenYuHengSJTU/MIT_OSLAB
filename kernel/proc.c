@@ -5,6 +5,10 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+// #include "fs.h"
+// #include "elf.h"
+// #include "spinlock.h"
+
 
 struct cpu cpus[NCPU];
 
@@ -34,14 +38,18 @@ procinit(void)
       // Allocate a page for the process's kernel stack.
       // Map it high in memory, followed by an invalid
       // guard page.
+
+      // added
+      #ifndef KERNEL_PER_PROC
       char *pa = kalloc();
       if(pa == 0)
         panic("kalloc");
       uint64 va = KSTACK((int) (p - proc));
       kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
       p->kstack = va;
+      #endif
   }
-  kvminithart();
+  // kvminithart();
 }
 
 // Must be called with interrupts disabled,
@@ -127,8 +135,55 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  #ifdef KERNEL_PER_PROC
+// added : map the stack to the kernel page
+  // initlock(&p->lock, "proc");
+  char *pa = kalloc();
+  p->kernel_pagetable = kvminit_aux();
+  if(pa == 0)
+    panic("kalloc");
+  // uint64 va = KSTACK((int) (p - proc));
+  uint64 va = TRAMPOLINE - 2 * PGSIZE;
+  mappages(p->kernel_pagetable, va, PGSIZE, (uint64)pa, PTE_R | PTE_W);
+  p->kstack = va; 
+  #endif
+
   return p;
 }
+
+extern void freewalk(pagetable_t);
+extern char etext[];
+
+void
+free_kernel_pagetable(pagetable_t pagetable , uint64 kstack)
+{
+  // there are 2^9 = 512 PTEs in a page table.
+  // for(int i = 0; i < 512; i++){
+  //   pte_t pte = pagetable[i];
+  //   if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0){
+  //     // this PTE points to a lower-level page table.
+  //     uint64 child = PTE2PA(pte);
+  //     free_kernel_pagetable((pagetable_t)child);
+  //     pagetable[i] = 0;
+  //   } else if(pte & PTE_V){
+  //     panic("freewalk: leaf");
+  //   }
+  // }
+  // kfree((void*)pagetable);
+
+  uvmunmap(pagetable, UART0 ,1,0);
+  uvmunmap(pagetable, VIRTIO0, 1, 0);
+  uvmunmap(pagetable, CLINT, 0x10000/PGSIZE ,0);
+  uvmunmap(pagetable, PLIC, 0x400000/PGSIZE ,0);
+  uvmunmap(pagetable, KERNBASE ,((uint64)etext - KERNBASE)/PGSIZE ,0);
+  uvmunmap(pagetable, (uint64)etext ,(PHYSTOP - (uint64)etext)/PGSIZE, 0);
+  uvmunmap(pagetable, TRAMPOLINE ,1 ,0);
+
+  uvmunmap(pagetable,kstack,1,1);
+
+  freewalk(pagetable);
+}
+
 
 // free a proc structure and the data hanging from it,
 // including user pages.
@@ -141,6 +196,13 @@ freeproc(struct proc *p)
   p->trapframe = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
+  
+  #ifdef KERNEL_PER_PROC
+  if(p->kernel_pagetable)
+      free_kernel_pagetable(p->kernel_pagetable , p->kstack);
+  p->kernel_pagetable = 0;
+  #endif
+
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -453,6 +515,11 @@ wait(uint64 addr)
 //  - swtch to start running that process.
 //  - eventually that process transfers control
 //    via swtch back to the scheduler.
+
+// modified to choose kernel_page altogether
+
+extern pagetable_t kernel_pagetable;
+
 void
 scheduler(void)
 {
@@ -473,11 +540,25 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
-        swtch(&c->context, &p->context);
 
+      #ifdef KERNEL_PER_PROC
+        // added
+        w_satp(MAKE_SATP(p->kernel_pagetable));
+        sfence_vma();
+        
+      #endif
+
+        swtch(&c->context, &p->context);
+        kvminithart();
         // Process is done running for now.
         // It should have changed its p->state before coming back.
         c->proc = 0;
+
+      //   #ifdef KERNEL_PER_PROC
+      // // added
+      //     w_satp(MAKE_SATP(kernel_pagetable));
+      //     sfence_vma();
+      //   #endif
 
         found = 1;
       }
@@ -486,8 +567,19 @@ scheduler(void)
 #if !defined (LAB_FS)
     if(found == 0) {
       intr_on();
+
+
+
+  // #ifdef KERNEL_PER_PROC
+  //     // added
+  //     w_satp(MAKE_SATP(kernel_pagetable));
+  //     sfence_vma();
+  // #endif
+
       asm volatile("wfi");
     }
+
+  
 #else
     ;
 #endif

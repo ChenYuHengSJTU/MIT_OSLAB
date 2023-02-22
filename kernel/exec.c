@@ -6,8 +6,86 @@
 #include "proc.h"
 #include "defs.h"
 #include "elf.h"
+#include "stddef.h"
+#include "assert.h"
 
 static int loadseg(pde_t *pgdir, uint64 addr, struct inode *ip, uint offset, uint sz);
+
+// added
+#define SIZE 512
+
+void vmprint_aux(pagetable_t pgdir, int level){
+  // assert(level <= 2 && level >= 0);
+  for(int i=0;i < SIZE;++i){
+    pte_t pte = pgdir[i];
+    if(pte & PTE_V){
+      uint64 child = PTE2PA(pte);
+      if(level == 0){
+        printf("..%d: pte %p pa %p\n",i,pte,child);
+        vmprint_aux((pagetable_t)child, level + 1);
+      }
+      else if(level == 1){
+        printf(".. ..%d: pte %p pa %p\n",i,pte,child);
+        vmprint_aux((pagetable_t)child, level + 1);
+      }
+      else{
+        printf(".. .. ..%d: pte %p pa %p\n",i,pte,child);
+      }
+    }
+  }
+  return;
+}
+
+void vmprint(pagetable_t p){
+  printf("page table %p\n",p);
+
+  vmprint_aux(p, 0);
+
+// I cannot understand why I cannot cast a integer into a pointer below, but 
+// I can manage it with the above code.
+
+  // int i;
+
+  // uint64* pgdir1, pgdir2, pgdir3;
+  // pgdir1 = p;
+  // pte_t pte1,pte2,pte3;
+
+  // for(i = 0;i < SIZE;++i){
+  //   if((p + i) != NULL){
+  //     // pgdir2 is the 2nd level PTE
+  //     // pte1 = *(p + i);
+  //     pte1 = pgdir1[i];
+
+  //     if((pte1 & PTE_V) == 0) continue;
+
+  //     printf("%d: pte %p pa %p\n",i,(p + i),PTE_FLAGS((uint64)pte1));
+
+  //     int j;
+  //     pgdir2 = (pagetable_t)(PTE2PA(pte1));
+  //     for(j = 0;j < SIZE;++j){
+  //       if((pgdir2 + j) != NULL){
+  //         // pte2 = *(uint64*)(pgdir2 + j);
+  //         pte2 = pgdir2[j];
+  //         if((pte2 & PTE_V) == 0) continue;
+  //         printf("  %d: pte %p pa %p\n",j,(uint64*)(pgdir2 + j),PTE_FLAGS((uint64)pte2));
+
+  //         int k;
+  //         pgdir3 = (uint64*)(PTE2PA(pte2));
+  //         for(k = 0;k < SIZE;++k){
+  //           if((pgdir3 + j) != NULL){
+  //             // pte3 = *(uint64*)(pgdir3 + k);
+  //             pte3 = pgdir3[k];
+
+  //             if((pte3 & PTE_V) == 0) continue;
+  //             printf("    %d: pte %p pa %p\n",k,(uint64*)(pgdir3 + k),PTE_FLAGS((uint64)pte3));
+  //           }
+  //         }
+  //       }
+  //     }
+  //   }
+  // }
+  // return;
+}
 
 int
 exec(char *path, char **argv)
@@ -115,6 +193,9 @@ exec(char *path, char **argv)
   p->trapframe->epc = elf.entry;  // initial program counter = main
   p->trapframe->sp = sp; // initial stack pointer
   proc_freepagetable(oldpagetable, oldsz);
+
+  // added
+  if(p->pid==1) vmprint(p->pagetable);
 
   return argc; // this ends up in a0, the first argument to main(argc, argv)
 
