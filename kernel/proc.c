@@ -5,6 +5,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+// #include <stdlib.h>
 
 struct cpu cpus[NCPU];
 
@@ -695,5 +696,37 @@ procdump(void)
       state = "???";
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
+  }
+}
+
+uint64 atoi(char* s){
+  uint64 res = 0;
+  int len = strlen(s);
+  // uint64 base = 1;
+  // while(len--) base*=10;
+  // len = strlen(s);
+  for(int i = 0;i < len;++i){
+    res *= 10;
+    res += (s[i] - '0');
+  }
+  return res;
+}
+
+// added
+void backtrace(){
+  uint64 cur_frame = r_fp();
+  uint64 frame;
+  uint64 func_addr;
+  char frame_dst[8] = {'\0'}, func_dst[8] = {'\0'}; 
+  
+  printf("backtrace:\n");
+
+  while(cur_frame){
+    copyin((pagetable_t)r_satp(), frame_dst, cur_frame - 8, 8);
+    frame = atoi(frame_dst);
+    copyin((pagetable_t)r_satp(), func_dst, cur_frame - 16, 8);
+    func_addr = atoi(func_dst);
+    printf("0x%02x\n", func_addr);
+    cur_frame = frame;
   }
 }
