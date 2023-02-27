@@ -38,7 +38,7 @@ pagetable_t kvminit_aux(){
 
   uvmmap(proc_kernel_page, UART0, UART0, PGSIZE, PTE_R | PTE_W);
   uvmmap(proc_kernel_page, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
-  uvmmap(proc_kernel_page, CLINT, CLINT, 0x10000, PTE_R | PTE_W);
+  // uvmmap(proc_kernel_page, CLINT, CLINT, 0x10000, PTE_R | PTE_W);
   uvmmap(proc_kernel_page, PLIC, PLIC, 0x400000, PTE_R | PTE_W);
   uvmmap(proc_kernel_page, KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X);
   uvmmap(proc_kernel_page, (uint64)etext, (uint64)etext, PHYSTOP-(uint64)etext, PTE_R | PTE_W);
@@ -78,8 +78,8 @@ kvminit()
   if(kernel_pagetable == 0){
     panic("kernel page fail\n");
   }
-  // // CLINT
-  // kvmmap(CLINT, CLINT, 0x10000, PTE_R | PTE_W);
+  // CLINT
+  kvmmap(CLINT, CLINT, 0x10000, PTE_R | PTE_W);
 
 }
 
@@ -288,6 +288,8 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
   return newsz;
 }
 
+// added
+// to copy the user mapping to the user kernel pagetable
 void
 uvm_copyto_kvm(pagetable_t pagetable, pagetable_t kernel_pagetable, uint64 oldsz, uint64 newsz){
   if(newsz < oldsz)
@@ -295,19 +297,24 @@ uvm_copyto_kvm(pagetable_t pagetable, pagetable_t kernel_pagetable, uint64 oldsz
 
   pte_t* upte, *kpte;
   uint64 pa, i;
+  // should be round up,otherwise will give rise to repetation
   oldsz = PGROUNDUP(oldsz);
 
-  for(i = oldsz; i < newsz; i += PGSIZE){
+  for(i = oldsz; i <= newsz; i += PGSIZE){
+    // get one of the user mapping
     if((upte = walk(pagetable, i, 0)) == 0){
       panic("the user vm pte did not exist\n");
     }
+    // can create a mapping if needed
     if((kpte = walk(kernel_pagetable, i, 1)) == 0){
       panic("fail to map uvm to kvm\n");
     }
 
+    // get the physical address which upte point to
     pa = PTE2PA(*upte);
 
-    uint64 flags = (PTE_FLAGS(*upte) & (~PTE_U));
+    // do not set the U bit so the kernel can access this
+    uint64 flags = (PTE_FLAGS(*upte)) & (~PTE_U);
     *kpte = PA2PTE(pa) | flags;
   }
 }
@@ -440,7 +447,7 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 int
 copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 {
-  #ifndef KERNEL_PER_PROC
+  #ifndef PROC_IN_KERNEL
   uint64 n, va0, pa0;
 
   while(len > 0){
@@ -460,7 +467,7 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
   return 0;
   #endif
 
-  #ifdef KERNEL_PER_PROC
+  #ifdef PROC_IN_KERNEL
     copyin_new(pagetable, dst, srcva, len);
   #endif
 
@@ -474,7 +481,7 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 int
 copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 {
-  #ifndef KERNEL_PER_PROC
+  #ifndef PROC_IN_KERNEL
   uint64 n, va0, pa0;
   int got_null = 0;
 
@@ -511,7 +518,7 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   }
   #endif
 
-  #ifdef KERNEL_PER_PROC
+  #ifdef PROC_IN_KERNEL
     copyinstr_new(pagetable, dst, srcva, max);
   #endif
 

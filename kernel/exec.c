@@ -194,7 +194,8 @@ exec(char *path, char **argv)
   safestrcpy(p->name, last, sizeof(p->name));
 
   // added
-  #ifdef KERNEL_PER_PROC
+  #ifdef PROC_IN_KERNEL
+    uvmunmap(p->kernel_pagetable, 0, PGROUNDUP(oldsz)/PGSIZE, 0);
     uvm_copyto_kvm(pagetable, p->kernel_pagetable, 0, sz);
   #endif
     
@@ -207,7 +208,7 @@ exec(char *path, char **argv)
   proc_freepagetable(oldpagetable, oldsz);
 
   // added
-  if(p->pid==1) vmprint(p->pagetable);
+  if(p->pid == 1) vmprint(p->pagetable);
 
   return argc; // this ends up in a0, the first argument to main(argc, argv)
 

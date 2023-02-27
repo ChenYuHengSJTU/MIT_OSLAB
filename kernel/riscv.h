@@ -355,3 +355,4 @@ typedef uint64 *pagetable_t; // 512 PTEs
 
 
 #define KERNEL_PER_PROC
+// #define PROC_IN_KERNEL

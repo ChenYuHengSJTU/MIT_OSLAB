@@ -169,6 +169,7 @@ free_kernel_pagetable(pagetable_t pagetable , uint64 kstack)
   uvmunmap(pagetable, VIRTIO0, 1, 0);
   // uvmunmap(pagetable, CLINT, 0x10000/PGSIZE ,0);
   uvmunmap(pagetable, PLIC, 0x400000/PGSIZE ,0);
+  // map each page
   uvmunmap(pagetable, KERNBASE ,((uint64)etext - KERNBASE)/PGSIZE ,0);
   uvmunmap(pagetable, (uint64)etext ,(PHYSTOP - (uint64)etext)/PGSIZE, 0);
   uvmunmap(pagetable, TRAMPOLINE ,1 ,0);
@@ -286,7 +287,7 @@ userinit(void)
 
   p->state = RUNNABLE;
 
-  #ifdef KERNEL_PER_PROC
+  #ifdef PROC_IN_KERNEL
     uvm_copyto_kvm(p->pagetable, p->kernel_pagetable, 0, p->sz);
   #endif
 
@@ -304,7 +305,7 @@ growproc(int n)
   sz = p->sz;
   if(n > 0){
     // added
-    #ifdef KERNEL_PER_PROC
+    #ifdef PROC_IN_KERNEL
       if (PGROUNDUP(sz + n) >= PLIC)
         return -1;
     #endif
@@ -314,8 +315,9 @@ growproc(int n)
     }
 
     // added
-    uvm_copyto_kvm(p->pagetable, p->kernel_pagetable,sz - n, sz);
-
+    #ifdef PROC_IN_KERNEL
+    uvm_copyto_kvm(p->pagetable, p->kernel_pagetable,p->sz, sz);
+    #endif
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
   }
@@ -346,18 +348,6 @@ fork(void)
   }
   np->sz = p->sz;
 
-  #ifdef KERNEL_PER_PROC
-  // added
-  // if(uvmcopy(p->kernel_pagetable, np->kernel_pagetable, 1) < 0){
-  //   freeproc(np);
-  //   release(&np->lock);
-  //   return -1; 
-  // }
-
-  uvm_copyto_kvm(np->pagetable, np->kernel_pagetable,0 ,np->sz);
-
-  #endif
-
   np->parent = p;
 
   // copy saved user registers.
@@ -379,6 +369,10 @@ fork(void)
   np->state = RUNNABLE;
 
   release(&np->lock);
+
+  #ifdef PROC_IN_KERNEL
+  uvm_copyto_kvm(np->pagetable, np->kernel_pagetable,0 ,np->sz);
+  #endif
 
   return pid;
 }
