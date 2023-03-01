@@ -130,6 +130,7 @@ found:
   if(p->kernel_pagetable == 0){
     freeproc(p);
     release(&p->lock);
+    panic("alloc kernel pgtbl fail\n");
     return 0;
   }
 
@@ -163,8 +164,9 @@ extern void freewalk(pagetable_t);
 extern char etext[];
 
 void
-free_kernel_pagetable(pagetable_t pagetable , uint64 kstack)
+free_kernel_pagetable(pagetable_t pagetable , uint64 kstack, uint64 sz)
 {
+  // printf("free kernel pgtbl\n");
   uvmunmap(pagetable, UART0 ,1,0);
   uvmunmap(pagetable, VIRTIO0, 1, 0);
   // uvmunmap(pagetable, CLINT, 0x10000/PGSIZE ,0);
@@ -174,7 +176,11 @@ free_kernel_pagetable(pagetable_t pagetable , uint64 kstack)
   uvmunmap(pagetable, (uint64)etext ,(PHYSTOP - (uint64)etext)/PGSIZE, 0);
   uvmunmap(pagetable, TRAMPOLINE ,1 ,0);
 
-  uvmunmap(pagetable,kstack,1,1);
+  uvmunmap(pagetable, kstack, 1, 1);
+
+  uvmunmap(pagetable, 0, PGROUNDUP(sz)/PGSIZE, 0);
+  
+  // vmprint(pagetable);
 
   freewalk(pagetable);
 }
@@ -194,7 +200,7 @@ freeproc(struct proc *p)
   
   #ifdef KERNEL_PER_PROC
   if(p->kernel_pagetable)
-      free_kernel_pagetable(p->kernel_pagetable , p->kstack);
+      free_kernel_pagetable(p->kernel_pagetable , p->kstack, p->sz);
   p->kernel_pagetable = 0;
   #endif
 
@@ -288,6 +294,7 @@ userinit(void)
   p->state = RUNNABLE;
 
   #ifdef PROC_IN_KERNEL
+    printf("userinit\n");
     uvm_copyto_kvm(p->pagetable, p->kernel_pagetable, 0, p->sz);
   #endif
 
@@ -316,10 +323,12 @@ growproc(int n)
 
     // added
     #ifdef PROC_IN_KERNEL
-    uvm_copyto_kvm(p->pagetable, p->kernel_pagetable,p->sz, sz);
+    // printf("grow proc\n");
+    uvm_copyto_kvm(p->pagetable, p->kernel_pagetable, p->sz, sz);
     #endif
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
+    // uvmunmap(p->kernel_pagetable,);
   }
   p->sz = sz;
   return 0;
@@ -368,11 +377,12 @@ fork(void)
 
   np->state = RUNNABLE;
 
-  release(&np->lock);
-
   #ifdef PROC_IN_KERNEL
+  printf("fork\n");
   uvm_copyto_kvm(np->pagetable, np->kernel_pagetable,0 ,np->sz);
   #endif
+
+  release(&np->lock);
 
   return pid;
 }

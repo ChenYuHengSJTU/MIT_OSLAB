@@ -300,7 +300,7 @@ uvm_copyto_kvm(pagetable_t pagetable, pagetable_t kernel_pagetable, uint64 oldsz
   // should be round up,otherwise will give rise to repetation
   oldsz = PGROUNDUP(oldsz);
 
-  for(i = oldsz; i <= newsz; i += PGSIZE){
+  for(i = oldsz; i < newsz; i += PGSIZE){
     // get one of the user mapping
     if((upte = walk(pagetable, i, 0)) == 0){
       panic("the user vm pte did not exist\n");
@@ -447,6 +447,7 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 int
 copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 {
+  // printf("copyin\n");
   #ifndef PROC_IN_KERNEL
   uint64 n, va0, pa0;
 

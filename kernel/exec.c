@@ -149,6 +149,12 @@ exec(char *path, char **argv)
   uint64 sz1;
   if((sz1 = uvmalloc(pagetable, sz, sz + 2*PGSIZE)) == 0)
     goto bad;
+
+  // added
+  #ifdef PROC_IN_KERNEL
+  if(sz1 >= PLIC) goto bad;
+  #endif
+
   sz = sz1;
   uvmclear(pagetable, sz-2*PGSIZE);
   sp = sz;
@@ -195,6 +201,7 @@ exec(char *path, char **argv)
 
   // added
   #ifdef PROC_IN_KERNEL
+    printf("exec\n");
     uvmunmap(p->kernel_pagetable, 0, PGROUNDUP(oldsz)/PGSIZE, 0);
     uvm_copyto_kvm(pagetable, p->kernel_pagetable, 0, sz);
   #endif
