@@ -701,7 +701,8 @@ procdump(void)
 
 uint64 atoi(char* s){
   uint64 res = 0;
-  int len = strlen(s);
+  // int len = strlen(s);
+  int len = 8;
   // uint64 base = 1;
   // while(len--) base*=10;
   // len = strlen(s);
@@ -712,21 +713,36 @@ uint64 atoi(char* s){
   return res;
 }
 
+extern pagetable_t kernel_pagetable;
 // added
 void backtrace(){
-  uint64 cur_frame = r_fp();
-  uint64 frame;
-  uint64 func_addr;
-  char frame_dst[8] = {'\0'}, func_dst[8] = {'\0'}; 
-  
   printf("backtrace:\n");
+  uint64* cur_frame = (uint64*)r_fp();
+  uint64* frame;
+  uint64* func_addr;
+  uint64 pagetop = PGROUNDUP((uint64)cur_frame);
+  pagetable_t pgtbl = (pagetable_t)r_satp();
+  // printf("pgtbl:%p\tkernel pgtbl", pgtbl);
+  // char frame_dst[9] = {'\0'};
+  // char func_dst[9] = {'\0'}; 
+  
+  // printf("backtrace:\n");
+  
+  if(kernel_pagetable == pgtbl) printf("In kernel\n");
+  else printf("In user\n");
 
-  while(cur_frame){
-    copyin((pagetable_t)r_satp(), frame_dst, cur_frame - 8, 8);
-    frame = atoi(frame_dst);
-    copyin((pagetable_t)r_satp(), func_dst, cur_frame - 16, 8);
-    func_addr = atoi(func_dst);
-    printf("0x%02x\n", func_addr);
-    cur_frame = frame;
+  while((uint64)cur_frame != pagetop){
+    // printf("%d\n", cur_frame);
+    // copyin(pgtbl, frame_dst, (uint64)cur_frame - 16, 8);
+    // frame = atoi(frame_dst);
+    // copyin(pgtbl, func_dst, cur_frame - 16, 8);
+    // printf("frame: %s\n", frame_dst);
+    // func_addr = atoi(func_dst);
+    // printf("0x%02x\n", func_addr);
+    // cur_frame = frame;
+    frame = (uint64*)((uint64)cur_frame - 16);
+    func_addr = (uint64*)((uint64)cur_frame - 8);
+    cur_frame  = (uint64*)*frame;
+    printf("%p\n", *func_addr);
   }
 }

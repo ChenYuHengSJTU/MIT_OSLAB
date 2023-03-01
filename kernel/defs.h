@@ -188,4 +188,5 @@ void            virtio_disk_intr(void);
 
 // added
 void backtrace();
-
+void save_trapframe(struct proc*);
+void restore_trapframe(struct proc*);

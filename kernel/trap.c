@@ -29,6 +29,85 @@ trapinithart(void)
   w_stvec((uint64)kernelvec);
 }
 
+// added
+void save_trapframe(struct proc* p){
+  p->saved.a0 = p->trapframe->a0;
+  p->saved.a1 = p->trapframe->a1;
+  p->saved.a2 = p->trapframe->a2;
+  p->saved.a3 = p->trapframe->a3;
+  p->saved.a4 = p->trapframe->a4;
+  p->saved.a5 = p->trapframe->a5;
+  p->saved.a6 = p->trapframe->a6;
+  p->saved.a7 = p->trapframe->a7;
+  p->saved.s0 = p->trapframe->s0;
+  p->saved.s1 = p->trapframe->s1;
+  p->saved.s2 = p->trapframe->s2;
+  p->saved.s3 = p->trapframe->s3;
+  p->saved.s4 = p->trapframe->s4;
+  p->saved.s5 = p->trapframe->s5;
+  p->saved.s6 = p->trapframe->s6;
+  p->saved.s7 = p->trapframe->s7;
+  p->saved.s8 = p->trapframe->s8;
+  p->saved.s9 = p->trapframe->s9;
+  p->saved.s10 = p->trapframe->s10;
+  p->saved.s11 = p->trapframe->s11;
+  p->saved.t0 = p->trapframe->t0;
+  p->saved.t1 = p->trapframe->t1;
+  p->saved.t2 = p->trapframe->t2;
+  p->saved.t3 = p->trapframe->t3;
+  p->saved.t4 = p->trapframe->t4;
+  p->saved.t5 = p->trapframe->t5;
+  p->saved.t6 = p->trapframe->t6;
+  p->saved.ra = p->trapframe->ra;
+  p->saved.sp = p->trapframe->sp;
+  p->saved.gp = p->trapframe->gp;
+  p->saved.tp = p->trapframe->tp;
+  p->saved.kernel_hartid = p->trapframe->kernel_hartid;
+  p->saved.kernel_satp = p->trapframe->kernel_satp;
+  p->saved.kernel_sp = p->trapframe->kernel_sp;
+  p->saved.kernel_trap = p->trapframe->kernel_trap;
+  p->saved.epc = p->trapframe->epc;
+}
+
+void restore_trapframe(struct proc* p){
+  p->trapframe->a0 = p->saved.a0;
+  p->trapframe->a1 = p->saved.a1;
+  p->trapframe->a2 = p->saved.a2;
+  p->trapframe->a3 = p->saved.a3;
+  p->trapframe->a4 = p->saved.a4;
+  p->trapframe->a5 = p->saved.a5;
+  p->trapframe->a6 = p->saved.a6;
+  p->trapframe->a7 = p->saved.a7;
+  p->trapframe->s0 = p->saved.s0;
+  p->trapframe->s1 = p->saved.s1;
+  p->trapframe->s2 = p->saved.s2;
+  p->trapframe->s3 = p->saved.s3;
+  p->trapframe->s4 = p->saved.s4;
+  p->trapframe->s5 = p->saved.s5;
+  p->trapframe->s6 = p->saved.s6;
+  p->trapframe->s7 = p->saved.s7;
+  p->trapframe->s8 = p->saved.s8;
+  p->trapframe->s9 = p->saved.s9;
+  p->trapframe->s10 = p->saved.s10;
+  p->trapframe->s11 = p->saved.s11;
+  p->trapframe->t0 = p->saved.t0;
+  p->trapframe->t1 = p->saved.t1;
+  p->trapframe->t2 = p->saved.t2;
+  p->trapframe->t3 = p->saved.t3;
+  p->trapframe->t4 = p->saved.t4;
+  p->trapframe->t5 = p->saved.t5;
+  p->trapframe->t6 = p->saved.t6;
+  p->trapframe->ra = p->saved.ra;
+  p->trapframe->sp = p->saved.sp;
+  p->trapframe->gp = p->saved.gp;
+  p->trapframe->tp = p->saved.tp;
+  p->trapframe->kernel_hartid = p->saved.kernel_hartid;
+  p->trapframe->kernel_satp = p->saved.kernel_satp;
+  p->trapframe->kernel_sp = p->saved.kernel_sp;
+  p->trapframe->kernel_trap = p->saved.kernel_trap;
+  p->trapframe->epc = p->saved.epc;
+}
+
 //
 // handle an interrupt, exception, or system call from user space.
 // called from trampoline.S
@@ -67,6 +146,22 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+    // added
+    if(which_dev == 2){
+      (p->interval)++;
+      // printf("ticks\n");
+      if(p->interval != 0){
+        if(p->interval == p->ticks){
+          if(p->returned){
+            save_trapframe(p);
+            p->trapframe->epc = (uint64)p->handler;
+            p->returned = 0;
+          }
+          p->interval = 0;
+        }
+      }
+      
+    }
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
@@ -77,8 +172,9 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
+  if(which_dev == 2){
     yield();
+  }
 
   usertrapret();
 }
