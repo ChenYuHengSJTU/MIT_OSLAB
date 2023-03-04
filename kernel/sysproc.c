@@ -1,10 +1,10 @@
 #include "types.h"
+#include "spinlock.h"
 #include "riscv.h"
 #include "defs.h"
 #include "date.h"
 #include "param.h"
 #include "memlayout.h"
-#include "spinlock.h"
 #include "proc.h"
 
 uint64
@@ -47,8 +47,30 @@ sys_sbrk(void)
   if(argint(0, &n) < 0)
     return -1;
   addr = myproc()->sz;
-  if(growproc(n) < 0)
-    return -1;
+  // modified
+  // if(growproc(n) < 0)
+  //   return -1;
+  struct proc* p = myproc();
+
+  uint64 newsz = addr + n;
+
+  if(p->sz + n >= MAXVA){
+    // p->killed = 1;
+    return addr;
+  }
+
+  if(n < 0){
+    uvmdealloc(p->pagetable, addr, newsz);
+    // if(newsz > addr){
+    //   newsz = 0;
+    //   uvmunmap(p->pagetable, 0, PGROUNDUP(addr) / PGSIZE, 1);
+    // }
+    // else
+    //   uvmunmap(p->pagetable, PGROUNDUP(newsz), (PGROUNDUP(addr) - PGROUNDUP(newsz)) / PGSIZE, 1);
+  }
+
+  p->sz = newsz;
+
   return addr;
 }
 

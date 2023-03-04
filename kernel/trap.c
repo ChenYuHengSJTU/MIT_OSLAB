@@ -1,10 +1,13 @@
 #include "types.h"
+#include "spinlock.h"
 #include "param.h"
 #include "memlayout.h"
 #include "riscv.h"
-#include "spinlock.h"
+// #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+// #include "proc.h"
+
 
 struct spinlock tickslock;
 uint ticks;
@@ -68,9 +71,41 @@ usertrap(void)
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
-    printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
-    printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
-    p->killed = 1;
+    // added
+    if(r_scause() == 13 || r_scause() == 15){
+      uint64 va = r_stval();
+
+      if(va >= p->sz){
+        p->killed = 1;
+      }
+      else if(va <= (p->trapframe->sp)){
+        // printf("here\n");
+        p->killed = 1;
+      }
+      else{
+        // printf("here\n");
+        va = PGROUNDDOWN(va);
+
+        char* mem = (char*)kalloc();
+
+        if(mem == 0){
+          p->killed = 1;
+        }
+        else{
+          memset(mem, 0, PGSIZE);
+          if(mappages(p->pagetable, va, PGSIZE, (uint64)mem, PTE_W|PTE_R|PTE_U) != 0){
+            kfree(mem);
+            // uvmdealloc(p->pagetable, a, oldsz);
+            p->killed = 1;
+          }
+        }
+      }
+    }
+    else{
+      printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
+      printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+      p->killed = 1;
+    }
   }
 
   if(p->killed)
