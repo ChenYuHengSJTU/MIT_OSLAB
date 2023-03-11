@@ -14,6 +14,8 @@ void freerange(void *pa_start, void *pa_end);
 extern char end[]; // first address after kernel.
                    // defined by kernel.ld.
 
+extern int ref_count[];
+
 struct run {
   struct run *next;
 };
@@ -56,7 +58,7 @@ kfree(void *pa)
 
   r = (struct run*)pa;
 
-  acquire(&kmem.lock);
+  acquire(&kmem.lock);    
   r->next = kmem.freelist;
   kmem.freelist = r;
   release(&kmem.lock);

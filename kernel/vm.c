@@ -15,6 +15,9 @@ extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 extern char trampoline[]; // trampoline.S
 
+#define PGNUM (PHYSTOP / PGSIZE)
+int ref_count[PGNUM];
+
 /*
  * create a direct-map page table for the kernel.
  */
@@ -71,9 +74,10 @@ kvminithart()
 pte_t *
 walk(pagetable_t pagetable, uint64 va, int alloc)
 {
-  if(va >= MAXVA)
+  if(va >= MAXVA){
+    printf("%p\n", va);
     panic("walk");
-
+  }
   for(int level = 2; level > 0; level--) {
     pte_t *pte = &pagetable[PX(level, va)];
     if(*pte & PTE_V) {
@@ -156,9 +160,15 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
   for(;;){
     if((pte = walk(pagetable, a, 1)) == 0)
       return -1;
+    // if((*pte & PTE_V) && !(*pte & PTE_COW))
+    //   panic("remap");
     if(*pte & PTE_V)
       panic("remap");
     *pte = PA2PTE(pa) | perm | PTE_V;
+
+    if(pa >= KERNBASE)
+      ref_count[(pa - KERNBASE) / PGSIZE] += 1;
+
     if(a == last)
       break;
     a += PGSIZE;
@@ -186,9 +196,12 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
       panic("uvmunmap: not mapped");
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
+    uint64 pa = PTE2PA(*pte);
+    if(pa >= KERNBASE)
+      ref_count[(pa - KERNBASE) / PGSIZE] -= 1;
     if(do_free){
-      uint64 pa = PTE2PA(*pte);
-      kfree((void*)pa);
+      if(ref_count[(pa - KERNBASE) / PGSIZE] == 1)
+        kfree((void*)pa);
     }
     *pte = 0;
   }
@@ -308,26 +321,47 @@ uvmfree(pagetable_t pagetable, uint64 sz)
 int
 uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 {
+  printf("uvmcopy begin\n");
   pte_t *pte;
-  uint64 pa, i;
+  uint64 pa;
+  uint64 i;
   uint flags;
-  char *mem;
+  // char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
-      panic("uvmcopy: pte should exist");
+      panic("uvmcopy: old pte should exist");
     if((*pte & PTE_V) == 0)
-      panic("uvmcopy: page not present");
+      panic("uvmcopy: old page not present");
     pa = PTE2PA(*pte);
+
+    // Modified
+    *pte &= (~PTE_W);
+    *pte |= PTE_COW;
+
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
+
+    if(mappages(new, i, PGSIZE, (uint64)pa, flags) != 0){
+      panic("cannot map old to new");
       goto err;
     }
+
+    // if((pa % PGSIZE) != 0){
+    //   panic("align error");
+    // }
+
+    // if(pa > KERNBASE)
+    //   ref_count[(pa - KERNBASE) / PGSIZE] += 1;
+    // if((mem = kalloc()) == 0)
+      // goto err;
+    // memmove(mem, (char*)pa, PGSIZE);
+    // if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
+      // kfree(mem);
+      // goto err;
+    // }
+
   }
+  printf("uvmcopy end\n");
   return 0;
 
  err:
@@ -354,22 +388,68 @@ uvmclear(pagetable_t pagetable, uint64 va)
 int
 copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
-  uint64 n, va0, pa0;
+  printf("copyout begin\n");
+  uint64 n = 0, va0, pa0;
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;
-    n = PGSIZE - (dstva - va0);
-    if(n > len)
-      n = len;
-    memmove((void *)(pa0 + (dstva - va0)), src, n);
+
+    pte_t* pte;
+    if((pte = walk(pagetable, va0, 0)) == 0){
+      return -1;
+    }
+
+    if(*pte & PTE_COW){
+      if(*pte & PTE_W) 
+        panic("cow page cannot be written");
+      // if(ref_count[(pa0 - KERNBASE) / PGSIZE] == 2){
+      //   *pte |= PTE_W;
+      //   *pte &= (~PTE_COW);
+      // }
+      // else{
+        *pte = *pte | PTE_W;
+        *pte = *pte & (~PTE_COW);
+        
+        uint flags = PTE_FLAGS(*pte);
+        uint64 pa = PTE2PA(*pte);
+
+        if((pa % PGSIZE) != 0)
+          panic("align error in copyout");
+
+        char* mem = kalloc();
+
+        if(mem == 0)
+          return -1;
+
+        ref_count[(pa0 - KERNBASE) / PGSIZE] -= 1;
+        if(ref_count[pa / PGSIZE] < 0)
+          panic("ref below 0 in copyout");
+      
+        ref_count[((uint64)mem - KERNBASE) / pa] += 1;
+
+        *pte = PA2PTE(mem) | flags;
+
+        memmove(mem, (char*)pa0, PGSIZE);
+
+        pa0 = (uint64)mem;
+      // }
+    }
+    // else{
+      n = PGSIZE - (dstva - va0);
+      if(n > len)
+        n = len;
+      memmove((void *)(pa0 + (dstva - va0)), src, n);
+    // }
 
     len -= n;
     src += n;
     dstva = va0 + PGSIZE;
   }
+
+  printf("copyout end\n");
   return 0;
 }
 

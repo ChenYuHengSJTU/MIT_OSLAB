@@ -16,6 +16,8 @@ void kernelvec();
 
 extern int devintr();
 
+extern int ref_count[];
+
 void
 trapinit(void)
 {
@@ -65,6 +67,57 @@ usertrap(void)
     intr_on();
 
     syscall();
+  } else if((r_scause() == 15) || (r_scause() == 13)){
+
+    printf("handle pgfault\n");
+
+    uint64 va = PGROUNDDOWN(r_stval());
+    if(va == TRAMPOLINE || va == TRAPFRAME || va == MAXVA) 
+      goto end;
+    pte_t* pte = walk(p->pagetable, va, 0);
+
+    if((pte == 0) || !(*pte & PTE_COW)){
+      p->killed = 1;
+    }
+    else{
+      char* mem = (char*)kalloc();
+
+      if(mem == 0){
+        p->killed = 1;
+        return;
+      }
+
+      uint flags = 0;
+      uint64 pa = PTE2PA(*pte);
+
+      // if(ref_count[(pa - KERNBASE) / PGSIZE] == 2){
+      //   *pte |= PTE_W;
+      //   *pte &= (~PTE_COW);
+      //   // goto end;
+      // }
+      // else{
+      if((*pte & PTE_W) == 0){
+        *pte |= PTE_W;
+        *pte &= (~PTE_COW);
+        flags =PTE_FLAGS(*pte);
+      }
+      else
+        panic("COW but can W");
+
+      if((uint64)mem >= KERNBASE)
+        ref_count[((uint64)mem - KERNBASE) / PGSIZE] += 1;
+      if(pa >= KERNBASE)
+        ref_count[(pa - KERNBASE) / PGSIZE] -= 1;
+
+      memmove(mem, (char*)pa, PGSIZE);
+
+      *pte = PA2PTE(*pte) | flags;
+
+      // }
+      end:
+      ;
+      printf("handled\n");      
+    }
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
